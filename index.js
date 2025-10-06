@@ -23,11 +23,24 @@ async function autoCommitPush(project) {
     await git.addConfig("user.name", process.env.GIT_USER_NAME);
     await git.addConfig("user.email", process.env.GIT_USER_EMAIL);
     await git.add(".");
-    await git.commit(`🤖 AI Build: ${project}`);
-    await git.branch(["-M", process.env.GIT_BRANCH]);
-    await git.addRemote("origin", process.env.GIT_REPO_URL);
-    await git.push(["-u", "origin", process.env.GIT_BRANCH, "--force"]);
 
+    // ⚙️ Handle "nothing to commit" gracefully
+    try {
+      await git.commit(`🤖 AI Build: ${project}`);
+    } catch {
+      console.log(chalk.gray("ℹ️ Nothing new to commit, continuing..."));
+    }
+
+    await git.branch(["-M", process.env.GIT_BRANCH]);
+
+    // 🚀 Fix: handle existing remote
+    const remotes = await git.getRemotes(true);
+    if (remotes.find(r => r.name === "origin")) {
+      await git.removeRemote("origin");
+    }
+    await git.addRemote("origin", process.env.GIT_REPO_URL);
+
+    await git.push(["-u", "origin", process.env.GIT_BRANCH, "--force"]);
     console.log(chalk.green("📤 Code committed & pushed to GitHub successfully!"));
   } catch (err) {
     console.error(chalk.red("❌ Git push failed:"), err.message);
@@ -43,6 +56,7 @@ app.post("/build", async (req, res) => {
     console.log(chalk.cyan(`🚀 Creating ${project}`));
     await fs.ensureDir(baseDir);
 
+    // Create all files in the workspace
     for (const [filename, content] of Object.entries(files)) {
       const filePath = path.join(baseDir, filename);
       await fs.outputFile(filePath, content);
@@ -52,7 +66,8 @@ app.post("/build", async (req, res) => {
     console.log(chalk.blue("✅ Verified build, preparing to push..."));
     res.status(200).json({ message: "Build successful" });
 
-    await autoCommitPush(project); // auto-push after verification
+    // Auto commit and push after successful creation
+    await autoCommitPush(project);
 
   } catch (err) {
     console.error(chalk.red("❌ Build failed:"), err.message);
